@@ -25,6 +25,7 @@ class Show:
                 self.dmx_data = parse_dmx_data(file)
 
     def play(self):
+        print(f'Playing show {self.name}')
         if self.media_file:
             play_qt_media(self.media_file)
         if len(self.dmx_data) > 0:
