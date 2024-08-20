@@ -1,9 +1,9 @@
 import sys
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtGui import QCursor
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout
+from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+from PyQt6.QtMultimediaWidgets import QVideoWidget
+from PyQt6.QtGui import QCursor
 
 window = None
 
@@ -14,7 +14,7 @@ class MainWindow(QWidget):
         self.setWindowTitle("Aion Show System")
         self.showFullScreen()
         self.setStyleSheet("background-color: black;")
-        self.setCursor(QCursor(Qt.BlankCursor))
+        self.setCursor(QCursor(Qt.CursorShape.BlankCursor))
 
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
@@ -22,7 +22,10 @@ class MainWindow(QWidget):
         self.videoWidget = QVideoWidget()
         self.layout.addWidget(self.videoWidget)
 
-        self.mediaPlayer = QMediaPlayer(None, QMediaPlayer.VideoSurface)
+        self.mediaPlayer = QMediaPlayer()
+        self.audioOutput = QAudioOutput()
+        self.audioOutput.setVolume(100)
+        self.mediaPlayer.setAudioOutput(self.audioOutput)
         self.mediaPlayer.setVideoOutput(self.videoWidget)
         
 
@@ -33,8 +36,8 @@ class MainWindow(QWidget):
             self.stopMedia()
     
     def playMedia(self, path):
-        content = QMediaContent(QUrl(path))
-        self.mediaPlayer.setMedia(content)
+        content = QUrl.fromLocalFile(path)
+        self.mediaPlayer.setSource(content)
         self.mediaPlayer.play()
 
     def stopMedia(self):
@@ -46,7 +49,7 @@ def start_qt_app():
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 def play_qt_media(path):
