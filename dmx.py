@@ -1,5 +1,4 @@
 import sacn
-import time
 
 
 class DmxOutput:
