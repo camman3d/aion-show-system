@@ -4,12 +4,13 @@ from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 from PyQt6.QtMultimediaWidgets import QVideoWidget
 from PyQt6.QtGui import QCursor
+import dmx
 
 window = None
 
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, shows):
         super().__init__()
         self.setWindowTitle("Aion Show System")
         self.showFullScreen()
@@ -27,13 +28,24 @@ class MainWindow(QWidget):
         self.audioOutput.setVolume(100)
         self.mediaPlayer.setAudioOutput(self.audioOutput)
         self.mediaPlayer.setVideoOutput(self.videoWidget)
+
+        self.shows = shows
         
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
+            dmx.output_device.stop()
             self.close()
         elif event.key() == Qt.Key.Key_Q:
             self.stopMedia()
+        elif event.key() == Qt.Key.Key_1:
+            self.shows[0].play()
+        elif event.key() == Qt.Key.Key_2:
+            self.shows[1].play()
+        elif event.key() == Qt.Key.Key_3:
+            self.shows[2].play()
+        elif event.key() == Qt.Key.Key_4:
+            self.shows[3].play()
     
     def playMedia(self, path):
         content = QUrl.fromLocalFile(path)
@@ -44,10 +56,10 @@ class MainWindow(QWidget):
         self.mediaPlayer.stop()
 
 
-def start_qt_app():
+def start_qt_app(shows):
     global window
     app = QApplication(sys.argv)
-    window = MainWindow()
+    window = MainWindow(shows)
     window.show()
     sys.exit(app.exec())
 

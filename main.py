@@ -28,13 +28,13 @@ def build_shows():
     shows = []
     for name, files in grouped_files.items():
         show = Show(name, files)
-        show.listen(config['mqtt']['host'])
+        if config['mqtt']['enabled']:
+            show.listen(config['mqtt']['host'])
         shows.append(show)
-
 
     return shows
 
 read_config()
-dmx.configure_dmx(config['dmx']['host'])
+dmx.configure_dmx(config['dmx']['protocol'], config['dmx']['host'])
 shows = build_shows()
-start_qt_app()
+start_qt_app(shows)

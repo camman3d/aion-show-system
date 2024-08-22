@@ -40,7 +40,7 @@ class Show:
                     return
                 time.sleep(0.001)
             
-            dmx.output_dmx(dmx_event['universe'], dmx_event['channel'], dmx_event['value'])
+            dmx.output_device.output(dmx_event['universe'], dmx_event['channel'], dmx_event['value'])
         self.dmx_playing = False
 
     def stop(self):
