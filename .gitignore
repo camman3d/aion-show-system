@@ -26,6 +26,7 @@ Thumbs.db
 
 # Show media (keep large audio out of git)
 media/
+!src/aion_show_system/media
 *.wav
 *.mp3
 *.flac
