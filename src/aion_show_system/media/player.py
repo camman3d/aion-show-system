@@ -48,6 +48,7 @@ class MediaPlayer(QObject):
     state_changed = Signal(PlaybackState)
     source_changed = Signal(object)  # Path | None
     has_video_changed = Signal(bool)
+    end_of_media = Signal()
     error_occurred = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -63,6 +64,7 @@ class MediaPlayer(QObject):
         self._player.durationChanged.connect(self.duration_changed.emit)
         self._player.playbackStateChanged.connect(self._on_state_changed)
         self._player.hasVideoChanged.connect(self.has_video_changed.emit)
+        self._player.mediaStatusChanged.connect(self._on_media_status)
         self._player.errorOccurred.connect(self._on_error)
 
     # -- transport ---------------------------------------------------------
@@ -94,6 +96,21 @@ class MediaPlayer(QObject):
 
     def seek(self, position_ms: int) -> None:
         self._player.setPosition(max(0, int(position_ms)))
+
+    def set_looping(self, looping: bool) -> None:
+        """Loop the file in the media backend rather than restarting it by hand.
+
+        Qt wraps to the top without tearing down the decoder, so a looped show
+        has no audio gap at the seam and the transport stays the authority on
+        where the show is - a hand-rolled seek-on-end has neither property.
+        """
+        self._player.setLoops(
+            QMediaPlayer.Loops.Infinite if looping else QMediaPlayer.Loops.Once
+        )
+
+    @property
+    def looping(self) -> bool:
+        return self._player.loops() == QMediaPlayer.Loops.Infinite
 
     # -- video -------------------------------------------------------------
     def set_video_output(self, sink: QVideoSink | object | None) -> None:
@@ -150,6 +167,15 @@ class MediaPlayer(QObject):
     # -- internals ---------------------------------------------------------
     def _on_state_changed(self, _qt_state: QMediaPlayer.PlaybackState) -> None:
         self.state_changed.emit(self.state)
+
+    def _on_media_status(self, status: QMediaPlayer.MediaStatus) -> None:
+        """Relay the end of the file, which is how a show knows it is over.
+
+        Qt reports ``EndOfMedia`` alongside a transition to ``StoppedState``,
+        and stopping alone cannot be told apart from an operator pressing Stop.
+        """
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.end_of_media.emit()
 
     def _on_error(self, _error: QMediaPlayer.Error, message: str) -> None:
         text = message or "Unknown media error"

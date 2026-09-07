@@ -1,5 +1,7 @@
 from aion_show_system.ui.main_window import MainWindow, format_ms
 
+# Windows here must not claim the IPC endpoint a real running instance listens on.
+
 
 def test_format_ms():
     assert format_ms(0) == "0:00"
@@ -10,20 +12,20 @@ def test_format_ms():
 
 
 def test_main_window_builds(app):
-    window = MainWindow()
+    window = MainWindow(start_triggers=False)
     assert window.play_button.text() == "Play"
     assert window.time_label.text() == "0:00 / 0:00"
     assert not window.video.isVisible()  # hidden until a video source loads
 
 
 def test_volume_slider_drives_player(app):
-    window = MainWindow()
+    window = MainWindow(start_triggers=False)
     window.volume_slider.setValue(50)
     assert 0.4 < window.player.volume < 0.6
 
 
 def test_demo_sequence_loads_into_the_engine(app):
-    window = MainWindow()
+    window = MainWindow(start_triggers=False)
     window.build_demo()
     show = window.engine.show
     assert show is not None and show.tracks

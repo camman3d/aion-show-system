@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import QSignalBlocker, Qt, QTimer, Slot
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QGroupBox,
@@ -22,13 +24,18 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME
+from ..config import AppConfig
 from ..media import PlaybackState, list_output_devices
 from ..paths import config_dir
-from ..show import MediaCue, Show, ShowEngine
+from ..show import MediaCue, Show, ShowEngine, ShowLibrary
 from ..show.demo import build_demo_show
+from ..triggers import TriggerManager
 from .dmx_monitor import DmxMonitor
 from .dmx_panel import DmxPanel
+from .trigger_panel import TriggerPanel
 from .video_widget import ShowVideoWidget
+
+log = logging.getLogger(__name__)
 
 MEDIA_FILTER = (
     "Media (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.mp4 *.mov *.mkv *.avi);;"
@@ -51,13 +58,22 @@ def format_ms(milliseconds: float) -> str:
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, engine: ShowEngine | None = None) -> None:
+    def __init__(
+        self,
+        engine: ShowEngine | None = None,
+        config: AppConfig | None = None,
+        *,
+        start_triggers: bool = True,
+    ) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(880, 660)
+        self.resize(880, 760)
 
+        self.config = config or AppConfig()
         self.engine = engine or ShowEngine(parent=self)
         self.player = self.engine.player
+        self.library = ShowLibrary([self.config.shows_path])
+        self.triggers = TriggerManager(self.engine, self.library, self.config, parent=self)
         self._scrubbing = False
         self._last_frame_count = 0
         self._last_rate_check = time.perf_counter()
@@ -76,7 +92,21 @@ class MainWindow(QMainWindow):
         self._ui_timer.timeout.connect(self._refresh_live_state)
         self._ui_timer.start()
 
+        self._refresh_transport_buttons()
+        self._apply_dmx_config()
+        # Tests build windows without wanting a live IPC endpoint or a socket
+        # dialling out, so arming the triggers is opt-out.
+        if start_triggers:
+            self.start_triggers()
+
         self.statusBar().showMessage("Ready")
+
+    def start_triggers(self) -> None:
+        """Build the configured trigger sources and start listening."""
+        self.triggers.build_default_sources()
+        for source in self.triggers.sources:
+            self.trigger_panel.track(source)
+        self.triggers.start()
 
     # -- construction ------------------------------------------------------
     def _build_menu(self) -> None:
@@ -121,7 +151,15 @@ class MainWindow(QMainWindow):
         self.video = ShowVideoWidget()
         self.video.setVisible(False)
 
-        self.file_label = QLabel("No show loaded")
+        # The loaded show is the first thing an operator looks for, so it gets
+        # its own line in a larger face rather than sharing the status bar.
+        self.show_label = QLabel("No show loaded")
+        show_font = self.show_label.font()
+        show_font.setBold(True)
+        show_font.setPointSize(show_font.pointSize() + 2)
+        self.show_label.setFont(show_font)
+
+        self.file_label = QLabel("No media")
         self.file_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
 
         self.position_slider = QSlider(Qt.Orientation.Horizontal)
@@ -146,7 +184,11 @@ class MainWindow(QMainWindow):
         self.play_button.clicked.connect(self.toggle_playback)
 
         self.stop_button = QPushButton("Stop")
-        self.stop_button.clicked.connect(self.engine.stop)
+        self.stop_button.clicked.connect(self.stop_playback)
+
+        self.loop_check = QCheckBox("Loop")
+        self.loop_check.setToolTip("Restart the show from the top when it reaches the end")
+        self.loop_check.toggled.connect(self._on_loop_toggled)
 
         open_button = QPushButton("Open...")
         open_button.clicked.connect(self.open_media)
@@ -160,6 +202,7 @@ class MainWindow(QMainWindow):
         transport.addWidget(open_button)
         transport.addWidget(self.play_button)
         transport.addWidget(self.stop_button)
+        transport.addWidget(self.loop_check)
         transport.addStretch(1)
         transport.addWidget(QLabel("Volume"))
         transport.addWidget(self.volume_slider)
@@ -171,6 +214,7 @@ class MainWindow(QMainWindow):
         audio_row.addWidget(self.device_combo, 1)
 
         self.dmx_panel = DmxPanel()
+        self.trigger_panel = TriggerPanel()
 
         self.universe_combo = QComboBox()
         self.universe_combo.setMaximumWidth(90)
@@ -189,11 +233,13 @@ class MainWindow(QMainWindow):
 
         layout = QVBoxLayout()
         layout.addWidget(self.video, 3)
+        layout.addWidget(self.show_label)
         layout.addWidget(self.file_label)
         layout.addWidget(self.position_slider)
         layout.addLayout(time_row)
         layout.addLayout(transport)
         layout.addLayout(audio_row)
+        layout.addWidget(self.trigger_panel)
         layout.addWidget(self.dmx_panel)
         layout.addWidget(monitor_box, 1)
 
@@ -208,8 +254,17 @@ class MainWindow(QMainWindow):
         self.player.has_video_changed.connect(self.video.setVisible)
         self.player.error_occurred.connect(self._on_error)
         self.engine.show_changed.connect(self._on_show_changed)
+        self.engine.show_finished.connect(self._on_show_finished)
         self.dmx_panel.output_requested.connect(self._on_output_requested)
         self.dmx_panel.output_released.connect(self._on_output_released)
+        self.triggers.triggered.connect(self.trigger_panel.show_triggered)
+        self.triggers.rejected.connect(self.trigger_panel.show_rejected)
+        self.triggers.triggered.connect(
+            lambda event: self.statusBar().showMessage(f"Triggered {event.show}")
+        )
+        self.triggers.rejected.connect(
+            lambda event, reason: self.statusBar().showMessage(f"Trigger refused: {reason}")
+        )
 
     # -- actions -----------------------------------------------------------
     @Slot()
@@ -224,6 +279,23 @@ class MainWindow(QMainWindow):
         show.media = MediaCue(path=str(path))
         show.name = Path(path).stem
         self.engine.load_show(show)
+
+    def load_file(self, path: str | Path) -> None:
+        """Open whatever the command line pointed at: a show file or media.
+
+        A ``.json`` file is a show; anything else is media to hang a show on.
+        """
+        target = Path(path).expanduser()
+        if target.suffix.lower() == ".json":
+            try:
+                self.engine.load_show(Show.load(target))
+            except (OSError, ValueError, KeyError) as error:
+                self._on_error(f"Could not open show {target}: {error}")
+            return
+        try:
+            self.load_media(target)
+        except FileNotFoundError:
+            self._on_error(f"No such media file: {target}")
 
     @Slot()
     def open_show(self) -> None:
@@ -261,10 +333,19 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def toggle_playback(self) -> None:
-        if self.player.state is PlaybackState.PLAYING:
+        if self.engine.is_playing:
             self.engine.pause()
         else:
             self.engine.play()
+        self._refresh_transport_buttons()
+
+    @Slot()
+    def stop_playback(self) -> None:
+        self.engine.stop()
+        self._refresh_transport_buttons()
+
+    def _on_loop_toggled(self, looping: bool) -> None:
+        self.engine.set_loop(looping)
 
     @Slot()
     def show_about(self) -> None:
@@ -278,11 +359,11 @@ class MainWindow(QMainWindow):
     # -- engine callbacks --------------------------------------------------
     @Slot(int)
     def _on_duration_changed(self, duration: int) -> None:
-        self.position_slider.setRange(0, max(0, duration))
+        self._refresh_duration()
 
     @Slot(PlaybackState)
     def _on_state_changed(self, state: PlaybackState) -> None:
-        self.play_button.setText("Pause" if state is PlaybackState.PLAYING else "Play")
+        self._refresh_transport_buttons()
         self.statusBar().showMessage(state.value.capitalize())
 
     @Slot(object)
@@ -296,10 +377,64 @@ class MainWindow(QMainWindow):
         for universe in universes or [0]:
             self.universe_combo.addItem(str(universe), universe)
         self.monitor.clear()
-        if show is not None:
-            tracks = f"{len(show.tracks)} track(s)" if show.tracks else "no lighting"
-            media = show.media.path if show.media else "no media"
-            self.file_label.setText(f"{show.name} — {media} — {tracks}")
+
+        if show is None:
+            self.show_label.setText("No show loaded")
+            self.file_label.setText("No media")
+            return
+
+        tracks = f"{len(show.tracks)} track(s)" if show.tracks else "no lighting"
+        flags = []
+        if show.loop:
+            flags.append("looping")
+        if not show.allow_override:
+            flags.append("not overridable")
+        if show.next_show:
+            flags.append(f"then {show.next_show}")
+        suffix = f" — {', '.join(flags)}" if flags else ""
+        self.show_label.setText(f"{show.name} — {tracks}{suffix}")
+        self.file_label.setText(show.media.path if show.media else "No media")
+
+        # Reflect the file's own loop flag without echoing back into the engine.
+        with QSignalBlocker(self.loop_check):
+            self.loop_check.setChecked(show.loop)
+        self._refresh_duration()
+        self._refresh_transport_buttons()
+
+    @Slot(object)
+    def _on_show_finished(self, show: Show) -> None:
+        self.statusBar().showMessage(f"{show.name} finished")
+        self._refresh_transport_buttons()
+
+    def _refresh_duration(self) -> None:
+        """Size the progress bar to the show, which may outlast its media."""
+        self.position_slider.setRange(0, max(0, self.engine.duration_ms))
+
+    def _refresh_transport_buttons(self) -> None:
+        playing = self.engine.is_playing
+        self.play_button.setText("Pause" if playing else "Play")
+        has_show = self.engine.show is not None
+        self.play_button.setEnabled(has_show)
+        self.stop_button.setEnabled(has_show)
+        self.loop_check.setEnabled(has_show)
+
+    def _apply_dmx_config(self) -> None:
+        """Point the output panel at the config file, and go live if it says to.
+
+        The panel stays usable either way; the config just decides what it
+        starts as, so a machine that boots into a show needs no clicks.
+        """
+        from .dmx_panel import ART_NET, DRY_RUN, SACN
+
+        dmx = self.config.dmx
+        labels = {"artnet": ART_NET, "sacn": SACN, "none": DRY_RUN}
+        self.dmx_panel.protocol_combo.setCurrentText(labels.get(dmx.protocol, DRY_RUN))
+        if dmx.host:
+            self.dmx_panel.host_edit.setText(dmx.host)
+        self.dmx_panel.universe_spin.setValue(dmx.universe)
+        if dmx.enabled:
+            log.info("Going live on DMX from config: %s", dmx.protocol)
+            self.dmx_panel.go_live_button.setChecked(True)
 
     @Slot(str)
     def _on_error(self, message: str) -> None:
@@ -351,7 +486,7 @@ class MainWindow(QMainWindow):
         position = self.engine.position_ms
         if not self._scrubbing:
             self.position_slider.setValue(int(position))
-        self.time_label.setText(f"{format_ms(position)} / {format_ms(self.player.duration)}")
+        self.time_label.setText(f"{format_ms(position)} / {format_ms(self.engine.duration_ms)}")
 
         sender = self.engine.sender
         now = time.perf_counter()
@@ -372,6 +507,7 @@ class MainWindow(QMainWindow):
                 self.monitor.set_frame(frame)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
+        self.triggers.stop()  # release the IPC endpoint before the process goes
         self.engine.stop()
         self.engine.clear_outputs()
         super().closeEvent(event)

@@ -1,0 +1,22 @@
+{
+  "shows_dir": "/opt/aion/shows",
+
+  "dmx": {
+    "protocol": "artnet",
+    "host": "10.0.0.20",
+    "port": 6454,
+    "universe": 1
+  },
+
+  "websocket": {
+    "host": "10.0.0.5",
+    "port": 8765,
+    "path": "/cues",
+    "reconnect_seconds": 5
+  },
+
+  "clock_triggers": [
+    { "time": "10:00 PM", "show": "Nightly" },
+    { "time": "14:30", "show": "Matinee", "days": ["sat", "sun"] }
+  ]
+}

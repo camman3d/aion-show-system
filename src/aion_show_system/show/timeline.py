@@ -139,12 +139,28 @@ class MediaCue:
 
 @dataclass
 class Show:
-    """A media cue plus the DMX tracks synchronised to it."""
+    """A media cue plus the DMX tracks synchronised to it.
+
+    Three fields shape how a show behaves in an unattended running system:
+
+    ``loop``
+        Restart from the top instead of finishing.
+    ``allow_override``
+        Whether a trigger arriving mid-show may replace this one. A show that
+        must not be interrupted - a scheduled announcement, say - sets this
+        false and triggers are refused until it finishes.
+    ``next_show``
+        The show to trigger when this one completes, which is how a sequence of
+        shows is chained without anything outside the show files knowing about it.
+    """
 
     name: str = "Untitled Show"
     media: MediaCue | None = None
     tracks: list[DmxTrack] = field(default_factory=list)
     duration_ms: int = 0
+    loop: bool = False
+    allow_override: bool = True
+    next_show: str | None = None
 
     @property
     def universes(self) -> list[int]:
@@ -179,17 +195,26 @@ class Show:
             "name": self.name,
             "media": self.media.to_dict() if self.media else None,
             "duration_ms": self.duration_ms,
+            "loop": self.loop,
+            "allow_override": self.allow_override,
+            "next_show": self.next_show,
             "tracks": [track.to_dict() for track in self.tracks],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Show:
         media = data.get("media")
+        next_show = data.get("next_show") or None
         return cls(
             name=data.get("name", "Untitled Show"),
             media=MediaCue.from_dict(media) if media else None,
             tracks=[DmxTrack.from_dict(t) for t in data.get("tracks", [])],
             duration_ms=int(data.get("duration_ms", 0)),
+            loop=bool(data.get("loop", False)),
+            # Default true: a show that says nothing is interruptible, so
+            # triggers keep working on show files written before this existed.
+            allow_override=bool(data.get("allow_override", True)),
+            next_show=str(next_show) if next_show else None,
         )
 
     def save(self, path: str | Path) -> Path:
