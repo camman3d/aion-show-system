@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aion-show-system"
+version = "0.1.0"
+description = "Cross-platform show control system with a Qt GUI and audio playback"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Josh Monson", email = "josh@joshmonson.com" }]
+dependencies = [
+    # Full PySide6: QtMultimedia (audio) ships in PySide6-Addons, not Essentials.
+    "PySide6>=6.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+]
+
+[project.gui-scripts]
+aion-show-system = "aion_show_system.__main__:main"
+
+[project.scripts]
+aion-show-system-cli = "aion_show_system.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aion_show_system"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
