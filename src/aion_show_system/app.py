@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "file",
         nargs="?",
-        help="Show file (.show.json) or media file to load on launch",
+        help="Show file (.show.json or .json) to load on launch",
     )
     parser.add_argument(
         "--trigger",

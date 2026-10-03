@@ -15,6 +15,11 @@
     "reconnect_seconds": 5
   },
 
+  "poll": {
+    "url": "http://10.0.0.5/cue.json",
+    "interval_seconds": 5
+  },
+
   "clock_triggers": [
     { "time": "10:00 PM", "show": "Nightly" },
     { "time": "14:30", "show": "Matinee", "days": ["sat", "sun"] }

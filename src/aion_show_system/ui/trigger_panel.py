@@ -15,6 +15,7 @@ from ..triggers import TriggerEvent, TriggerSource
 _LABELS = {
     "clock": "Clock",
     "websocket": "WebSocket",
+    "poll": "Poll",
     "command": "Command line",
 }
 

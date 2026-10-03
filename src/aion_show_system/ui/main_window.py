@@ -27,7 +27,7 @@ from .. import APP_NAME
 from ..config import AppConfig
 from ..media import PlaybackState, list_output_devices
 from ..paths import config_dir
-from ..show import MediaCue, Show, ShowEngine, ShowLibrary
+from ..show import Show, ShowEngine, ShowLibrary
 from ..show.demo import build_demo_show
 from ..triggers import TriggerManager
 from .dmx_monitor import DmxMonitor
@@ -37,12 +37,6 @@ from .video_widget import ShowVideoWidget
 
 log = logging.getLogger(__name__)
 
-MEDIA_FILTER = (
-    "Media (*.wav *.mp3 *.flac *.ogg *.m4a *.aac *.mp4 *.mov *.mkv *.avi);;"
-    "Audio (*.wav *.mp3 *.flac *.ogg *.m4a *.aac);;"
-    "Video (*.mp4 *.mov *.mkv *.avi);;"
-    "All files (*)"
-)
 SHOW_FILTER = "Show files (*.show.json *.json);;All files (*)"
 UI_REFRESH_MS = 50  # 20 Hz is plenty for a monitor; DMX itself runs at 40 Hz
 
@@ -110,16 +104,9 @@ class MainWindow(QMainWindow):
 
     # -- construction ------------------------------------------------------
     def _build_menu(self) -> None:
-        open_media = QAction("&Open Media...", self)
-        open_media.setShortcut(QKeySequence.StandardKey.Open)
-        open_media.triggered.connect(self.open_media)
-
-        open_show = QAction("Open S&how...", self)
+        open_show = QAction("&Open Show...", self)
+        open_show.setShortcut(QKeySequence.StandardKey.Open)
         open_show.triggered.connect(self.open_show)
-
-        save_show = QAction("&Save Show As...", self)
-        save_show.setShortcut(QKeySequence.StandardKey.SaveAs)
-        save_show.triggered.connect(self.save_show)
 
         demo = QAction("Build &Demo Sequence", self)
         demo.setStatusTip("Generate a DMX chase across the loaded media's duration")
@@ -130,9 +117,7 @@ class MainWindow(QMainWindow):
         quit_action.triggered.connect(self.close)
 
         file_menu = self.menuBar().addMenu("&File")
-        file_menu.addAction(open_media)
         file_menu.addAction(open_show)
-        file_menu.addAction(save_show)
         file_menu.addSeparator()
         file_menu.addAction(demo)
         file_menu.addSeparator()
@@ -190,8 +175,8 @@ class MainWindow(QMainWindow):
         self.loop_check.setToolTip("Restart the show from the top when it reaches the end")
         self.loop_check.toggled.connect(self._on_loop_toggled)
 
-        open_button = QPushButton("Open...")
-        open_button.clicked.connect(self.open_media)
+        open_button = QPushButton("Open Show...")
+        open_button.clicked.connect(self.open_show)
 
         self.volume_slider = QSlider(Qt.Orientation.Horizontal)
         self.volume_slider.setRange(0, 100)
@@ -267,35 +252,16 @@ class MainWindow(QMainWindow):
         )
 
     # -- actions -----------------------------------------------------------
-    @Slot()
-    def open_media(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open Media", "", MEDIA_FILTER)
-        if path:
-            self.load_media(path)
-
-    def load_media(self, path: str | Path) -> None:
-        """Point the current show at a media file, keeping any lighting tracks."""
-        show = self.engine.show or Show()
-        show.media = MediaCue(path=str(path))
-        show.name = Path(path).stem
-        self.engine.load_show(show)
-
     def load_file(self, path: str | Path) -> None:
-        """Open whatever the command line pointed at: a show file or media.
-
-        A ``.json`` file is a show; anything else is media to hang a show on.
-        """
+        """Open the show file the command line pointed at."""
         target = Path(path).expanduser()
-        if target.suffix.lower() == ".json":
-            try:
-                self.engine.load_show(Show.load(target))
-            except (OSError, ValueError, KeyError) as error:
-                self._on_error(f"Could not open show {target}: {error}")
+        if target.suffix.lower() != ".json":
+            self._on_error(f"Not a show file: {target}")
             return
         try:
-            self.load_media(target)
-        except FileNotFoundError:
-            self._on_error(f"No such media file: {target}")
+            self.engine.load_show(Show.load(target))
+        except (OSError, ValueError, KeyError) as error:
+            self._on_error(f"Could not open show {target}: {error}")
 
     @Slot()
     def open_show(self) -> None:
@@ -306,18 +272,6 @@ class MainWindow(QMainWindow):
             self.engine.load_show(Show.load(path))
         except (OSError, ValueError, KeyError) as error:
             self._on_error(f"Could not open show: {error}")
-
-    @Slot()
-    def save_show(self) -> None:
-        show = self.engine.show
-        if show is None:
-            self._on_error("There is no show to save yet.")
-            return
-        suggested = str(config_dir() / f"{show.name}.show.json")
-        path, _ = QFileDialog.getSaveFileName(self, "Save Show", suggested, SHOW_FILTER)
-        if path:
-            show.save(path)
-            self.statusBar().showMessage(f"Saved {path}")
 
     @Slot()
     def build_demo(self) -> None:

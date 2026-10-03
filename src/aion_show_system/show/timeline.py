@@ -52,6 +52,21 @@ class DmxKeyframe:
         )
 
 
+def _pack_wide(channels: tuple[int, ...], values: dict[int, int]) -> int:
+    """The one number a group of channels carries, most significant first."""
+    packed = 0
+    for channel in channels:
+        packed = (packed << 8) | values.get(channel, 0)
+    return packed
+
+
+def _unpack_wide(channels: tuple[int, ...], packed: int) -> dict[int, int]:
+    return {
+        channel: (packed >> (8 * (len(channels) - 1 - index))) & 0xFF
+        for index, channel in enumerate(channels)
+    }
+
+
 @dataclass
 class DmxTrack:
     """An ordered sequence of keyframes rendering into one universe."""
@@ -61,9 +76,25 @@ class DmxTrack:
     # defaulting to 1 keeps a show valid on either protocol.
     universe: int = 1
     keyframes: list[DmxKeyframe] = field(default_factory=list)
+    # Groups of channels that together carry one value, most significant
+    # first - a 16-bit pan on channels 1 and 2 is ``(1, 2)``. A group fades as
+    # one number and is split back into bytes afterwards, so its fine channel
+    # never wraps on its own mid-fade and kicks the value half a coarse step.
+    wide: list[tuple[int, ...]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self.keyframes = sorted(self.keyframes, key=lambda kf: kf.time_ms)
+        self.wide = [tuple(int(c) for c in group) for group in self.wide]
+        seen: set[int] = set()
+        for group in self.wide:
+            if len(group) < 2:
+                raise ValueError(f"Wide channel group {group} needs at least two channels")
+            for channel in group:
+                if not MIN_CHANNEL <= channel <= MAX_CHANNEL:
+                    raise ValueError(f"DMX channel {channel} out of range 1-{MAX_CHANNEL}")
+                if channel in seen:
+                    raise ValueError(f"DMX channel {channel} is in more than one wide group")
+                seen.add(channel)
 
     @property
     def duration_ms(self) -> int:
@@ -79,7 +110,8 @@ class DmxTrack:
 
         Channels hold their last set value until another keyframe touches them,
         and fade linearly toward the next keyframe that names them. Before the
-        first keyframe the track is dark; after the last it holds.
+        first keyframe the track is dark; after the last it holds. A wide group
+        whose every channel the next keyframe names fades as one value.
         """
         state: dict[int, int] = {}
         index = 0
@@ -104,14 +136,26 @@ class DmxTrack:
         for channel, target in following.values.items():
             start = state.get(channel, 0)
             levels[channel] = _clamp_level(start + (target - start) * fraction)
+        for group in self.wide:
+            if not all(channel in following.values for channel in group):
+                # A keyframe that names only part of a group fades the parts on
+                # their own, as if the group were not declared.
+                continue
+            start = _pack_wide(group, state)
+            target = _pack_wide(group, following.values)
+            packed = max(0, min((1 << (8 * len(group))) - 1, round(start + (target - start) * fraction)))
+            levels.update(_unpack_wide(group, packed))
         return levels
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "name": self.name,
             "universe": self.universe,
             "keyframes": [kf.to_dict() for kf in self.keyframes],
         }
+        if self.wide:
+            data["wide"] = [list(group) for group in self.wide]
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> DmxTrack:
@@ -119,6 +163,7 @@ class DmxTrack:
             name=data.get("name", "Track"),
             universe=int(data.get("universe", 1)),
             keyframes=[DmxKeyframe.from_dict(kf) for kf in data.get("keyframes", [])],
+            wide=[tuple(int(c) for c in group) for group in data.get("wide", [])],
         )
 
 

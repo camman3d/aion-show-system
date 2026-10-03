@@ -1,4 +1,4 @@
-"""The application config file: DMX output, WebSocket server and clock triggers.
+"""The application config file: DMX output, WebSocket server, poll URL and clock triggers.
 
 One JSON file, read once at startup from :func:`default_config_path`. Every
 section is optional and every field has a working default, so a missing file is
@@ -11,6 +11,7 @@ should do.
   "shows_dir": "D:/shows",
   "dmx": { "protocol": "artnet", "host": "10.0.0.20", "universe": 1 },
   "websocket": { "host": "10.0.0.5", "port": 8765, "path": "/shows" },
+  "poll": { "url": "http://10.0.0.5/cue.json", "interval_seconds": 5 },
   "clock_triggers": [
     { "time": "10:00 PM", "show": "Nightly", "days": ["fri", "sat"] }
   ]
@@ -214,11 +215,34 @@ class WebSocketConfig:
 
 
 @dataclass(frozen=True)
+class PollConfig:
+    """A URL polled for cues. Without a ``url`` the poller is off."""
+
+    url: str | None = None
+    interval_seconds: float = 5.0
+    timeout_seconds: float = 5.0
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PollConfig:
+        url = data.get("url")
+        return cls(
+            url=str(url).strip() if url else None,
+            interval_seconds=float(data.get("interval_seconds", 5.0)),
+            timeout_seconds=float(data.get("timeout_seconds", 5.0)),
+        )
+
+
+@dataclass(frozen=True)
 class AppConfig:
     """Everything the config file can say."""
 
     dmx: DmxConfig = field(default_factory=DmxConfig)
     websocket: WebSocketConfig = field(default_factory=WebSocketConfig)
+    poll: PollConfig = field(default_factory=PollConfig)
     clock_triggers: tuple[ClockTrigger, ...] = ()
     shows_dir: str | None = None
     path: Path | None = None
@@ -241,6 +265,7 @@ class AppConfig:
         return cls(
             dmx=DmxConfig.from_dict(data.get("dmx") or {}),
             websocket=WebSocketConfig.from_dict(data.get("websocket") or {}),
+            poll=PollConfig.from_dict(data.get("poll") or {}),
             clock_triggers=tuple(triggers),
             shows_dir=data.get("shows_dir") or None,
             path=path,

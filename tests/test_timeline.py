@@ -50,6 +50,55 @@ def test_untouched_channels_hold_their_value():
     assert levels[2] == 100  # held
 
 
+def test_wide_group_fades_as_one_value():
+    """A 16-bit pair crossing a coarse boundary must not kick half a step.
+
+    Faded independently, 1/255 -> 2/0 passes through 2/128 at the midpoint,
+    which is 640 on a value that should be sitting at 511.5.
+    """
+    track = DmxTrack(
+        keyframes=[DmxKeyframe(0, {1: 1, 2: 255}), DmxKeyframe(1000, {1: 2, 2: 0})],
+        wide=[(1, 2)],
+    )
+    levels = track.levels_at(500)
+    assert levels[1] * 256 + levels[2] == 512
+    assert track.levels_at(0) == {1: 1, 2: 255}
+    assert track.levels_at(1000) == {1: 2, 2: 0}
+
+
+def test_wide_group_starts_from_zero_like_any_channel():
+    track = DmxTrack(keyframes=[DmxKeyframe(0, {}), DmxKeyframe(1000, {1: 1, 2: 0})], wide=[(1, 2)])
+    levels = track.levels_at(500)
+    assert levels[1] * 256 + levels[2] == 128
+
+
+def test_wide_group_partially_named_fades_independently():
+    track = DmxTrack(
+        keyframes=[DmxKeyframe(0, {1: 1, 2: 255}), DmxKeyframe(1000, {2: 0})],
+        wide=[(1, 2)],
+    )
+    assert track.levels_at(500) == {1: 1, 2: 128}
+
+
+def test_wide_group_rejects_bad_channels():
+    with pytest.raises(ValueError):
+        DmxTrack(wide=[(1,)])
+    with pytest.raises(ValueError):
+        DmxTrack(wide=[(1, 513)])
+    with pytest.raises(ValueError):
+        DmxTrack(wide=[(1, 2), (2, 3)])
+
+
+def test_wide_group_round_trips_through_json(tmp_path):
+    track = DmxTrack(keyframes=[DmxKeyframe(0, {3: 0, 4: 0})], wide=[(3, 4)])
+    plain = DmxTrack(keyframes=[DmxKeyframe(0, {1: 0})])
+    assert "wide" not in plain.to_dict()
+    path = Show(tracks=[track, plain]).save(tmp_path / "wide.show.json")
+    loaded = Show.load(path)
+    assert loaded.tracks[0].wide == [(3, 4)]
+    assert loaded.tracks[1].wide == []
+
+
 def test_render_produces_512_byte_frames():
     show = Show(tracks=[DmxTrack(universe=3, keyframes=[DmxKeyframe(0, {1: 255, 512: 10})])])
     frames = show.render(0)

@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 CLOCK = "clock"
 WEBSOCKET = "websocket"
 COMMAND = "command"
+POLL = "poll"
 CHAIN = "chain"
 MANUAL = "manual"
 

@@ -19,6 +19,7 @@ from ..show.library import ShowLibrary
 from .base import CHAIN, TriggerEvent, TriggerSource
 from .clock_source import ClockTriggerSource
 from .command_source import CommandTriggerSource
+from .poll_source import PollTriggerSource
 from .websocket_source import WebSocketTriggerSource
 
 log = logging.getLogger(__name__)
@@ -56,9 +57,10 @@ class TriggerManager(QObject):
         return source
 
     def build_default_sources(self) -> None:
-        """Create the three configured trigger sources: clock, socket, CLI."""
+        """Create the configured trigger sources: clock, WebSocket, poll, CLI."""
         self.add_source(ClockTriggerSource(self.config.clock_triggers))
         self.add_source(WebSocketTriggerSource(self.config.websocket))
+        self.add_source(PollTriggerSource(self.config.poll))
         self.command_source = self.add_source(CommandTriggerSource())
 
     def start(self) -> None:
