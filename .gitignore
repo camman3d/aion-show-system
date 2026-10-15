@@ -30,3 +30,7 @@ media/
 *.wav
 *.mp3
 *.flac
+
+# Runtime output
+data/
+logs/

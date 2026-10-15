@@ -72,6 +72,8 @@ the app at 10:00 PM doesn't immediately re-fire the 10:00 PM show.
 `inc` is a counter the server bumps whenever it wants a show started. The
 source remembers the last `inc` and fires `show` only when `inc` **increases**:
 
+- If `poll.delay_seconds` (alias `delay`) is set, the show starts that many
+  seconds after the cue is seen. Stopping the source cancels pending starts.
 - `inc` of 0, or a blank/missing `show`, never starts anything.
 - The **first successful response after startup is a baseline** and never
   fires, so restarting the machine doesn't replay the last cue.

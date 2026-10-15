@@ -14,7 +14,7 @@ src/aion_show_system/
 ├── __main__.py          `python -m aion_show_system` / console-script entry
 ├── app.py               argument parsing, QApplication bootstrap, --trigger client
 ├── config.py            AppConfig and its sections (DMX, WebSocket, clock triggers)
-├── paths.py             platform config/data/log dirs (via QStandardPaths)
+├── paths.py             project-relative config/data/log dirs
 ├── logging_setup.py     stderr + rotating file log
 ├── show/                the cue model and playback engine
 │   ├── timeline.py      Show, DmxTrack, DmxKeyframe, MediaCue (pure data, no Qt)

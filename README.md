@@ -48,8 +48,7 @@ python -m aion_show_system --config /etc/aion/config.json
 
 ## Configuration
 
-`config.json` (optional) is read from `paths.config_dir()` (typically
-`%APPDATA%/AION/AION Show System/` on Windows or `~/.config/AION Show System/`).
+`config.json` (optional) is read from the project root (`paths.config_dir()`).
 It can specify DMX parameters, a websocket endpoint and a wall‑clock schedule.
 
 ```json

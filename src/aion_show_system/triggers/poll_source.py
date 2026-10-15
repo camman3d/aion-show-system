@@ -62,6 +62,7 @@ class PollTriggerSource(TriggerSource):
         self._reply: QNetworkReply | None = None
         self._last_inc: int | None = None
         self._failing = False
+        self._pending: set[QTimer] = set()
 
         self._timer = QTimer(self)
         self._timer.setInterval(max(250, int(config.interval_seconds * 1000)))
@@ -79,6 +80,10 @@ class PollTriggerSource(TriggerSource):
 
     def stop(self) -> None:
         self._timer.stop()
+        for timer in self._pending:
+            timer.stop()
+            timer.deleteLater()
+        self._pending.clear()
         if self._reply is not None:
             self._reply.abort()
         self.set_status("stopped")
@@ -107,9 +112,27 @@ class PollTriggerSource(TriggerSource):
         if previous is None:
             return  # baseline
         if inc > previous and inc > 0 and show:
-            self.fire(show, detail=f"poll inc {inc}")
+            self._fire_after_delay(show, f"poll inc {inc}")
 
     # -- internals ---------------------------------------------------------
+    def _fire_after_delay(self, show: str, detail: str) -> None:
+        delay = self.config.delay_seconds
+        if delay <= 0:
+            self.fire(show, detail=detail)
+            return
+        log.info("poll trigger: %s will start in %.1fs", show, delay)
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        self._pending.add(timer)
+
+        def done() -> None:
+            self._pending.discard(timer)
+            timer.deleteLater()
+            self.fire(show, detail=detail)
+
+        timer.timeout.connect(done)
+        timer.start(int(delay * 1000))
+
     def _on_finished(self, reply: QNetworkReply) -> None:
         self._reply = None
         try:

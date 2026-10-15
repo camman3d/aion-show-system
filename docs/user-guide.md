@@ -26,7 +26,7 @@ python -m aion_show_system my.show.json          # preload a show
 python -m aion_show_system --config /etc/aion/config.json
 ```
 
-Logs go to stderr and to `<AppDataLocation>/logs/aion-show-system.log`.
+Logs go to stderr and to `<project>/logs/aion-show-system.log`.
 
 ## The window
 

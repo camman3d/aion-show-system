@@ -11,7 +11,7 @@ should do.
   "shows_dir": "D:/shows",
   "dmx": { "protocol": "artnet", "host": "10.0.0.20", "universe": 1 },
   "websocket": { "host": "10.0.0.5", "port": 8765, "path": "/shows" },
-  "poll": { "url": "http://10.0.0.5/cue.json", "interval_seconds": 5 },
+  "poll": { "url": "http://10.0.0.5/cue.json", "interval_seconds": 5, "delay_seconds": 2 },
   "clock_triggers": [
     { "time": "10:00 PM", "show": "Nightly", "days": ["fri", "sat"] }
   ]
@@ -216,11 +216,16 @@ class WebSocketConfig:
 
 @dataclass(frozen=True)
 class PollConfig:
-    """A URL polled for cues. Without a ``url`` the poller is off."""
+    """A URL polled for cues. Without a ``url`` the poller is off.
+
+    ``delay_seconds`` holds back each poll-triggered show for that long after the
+    cue is seen; 0 starts it immediately.
+    """
 
     url: str | None = None
     interval_seconds: float = 5.0
     timeout_seconds: float = 5.0
+    delay_seconds: float = 0.0
 
     @property
     def enabled(self) -> bool:
@@ -233,6 +238,7 @@ class PollConfig:
             url=str(url).strip() if url else None,
             interval_seconds=float(data.get("interval_seconds", 5.0)),
             timeout_seconds=float(data.get("timeout_seconds", 5.0)),
+            delay_seconds=max(0.0, float(data.get("delay_seconds", data.get("delay", 0.0)))),
         )
 
 

@@ -9,15 +9,12 @@ treated as absent so an unattended machine still boots.
 
 | Item | Location |
 | --- | --- |
-| Config file (default) | `<AppConfigLocation>/config.json` |
-| Shows directory (default) | `<AppConfigLocation>/shows/` |
-| Log file | `<AppDataLocation>/logs/aion-show-system.log` (1 MB × 3 rotating) |
+| Config file (default) | `<project>/config.json` |
+| Shows directory (default) | `<project>/shows/` |
+| Log file | `<project>/logs/aion-show-system.log` (1 MB × 3 rotating) |
 
-`<AppConfigLocation>` / `<AppDataLocation>` come from Qt's `QStandardPaths` with
-org `AION` and app `AION Show System`: typically
-`%APPDATA%\AION\AION Show System` (Windows, config) and
-`~/.config/AION Show System` (Linux). Override the file with
-`--config PATH`.
+`<project>` is the repository root (the directory containing `pyproject.toml`).
+Override the config file with `--config PATH`.
 
 ## Full example
 
@@ -58,7 +55,7 @@ A copy is in `config.example.json`.
 
 String. Directory that trigger references resolve against (see
 [triggers.md](triggers.md#how-a-show-is-resolved)). `~` is expanded. Default:
-`<AppConfigLocation>/shows`.
+`<project>/shows`.
 
 ## `dmx`
 
@@ -98,6 +95,7 @@ panel shows "not configured" (not an error).
 | `url` | string | none | URL to GET. Polling is off when absent |
 | `interval_seconds` | float | `5.0` | Time between polls (minimum 0.25) |
 | `timeout_seconds` | float | `5.0` | Per-request timeout |
+| `delay_seconds` (or `delay`) | float | `0` | Seconds to wait after a poll cue before the show starts |
 
 The response must be `{"show": "name", "inc": N}`; a show starts when `inc`
 increases. See [triggers.md](triggers.md#poll).
