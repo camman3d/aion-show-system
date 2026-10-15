@@ -49,11 +49,13 @@ class MediaPlayer(QObject):
     source_changed = Signal(object)  # Path | None
     has_video_changed = Signal(bool)
     end_of_media = Signal()
+    ready = Signal()  # the source is decoded far enough to play without stalling
     error_occurred = Signal(str)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._source: Path | None = None
+        self._ready = False
         self._output = QAudioOutput(self)
         self._player = QMediaPlayer(self)
         self._player.setAudioOutput(self._output)
@@ -74,9 +76,15 @@ class MediaPlayer(QObject):
         if not source.is_file():
             raise FileNotFoundError(source)
         self._source = source
+        self._ready = False
         self._player.setSource(QUrl.fromLocalFile(str(source)))
         log.info("Loaded media source %s", source)
         self.source_changed.emit(source)
+
+    @property
+    def is_ready(self) -> bool:
+        """True once the loaded source can start playing without a stall."""
+        return self._ready
 
     def play(self) -> None:
         if self._source is not None:
@@ -174,6 +182,19 @@ class MediaPlayer(QObject):
         Qt reports ``EndOfMedia`` alongside a transition to ``StoppedState``,
         and stopping alone cannot be told apart from an operator pressing Stop.
         """
+        if status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            if not self._ready:
+                self._ready = True
+                self.ready.emit()
+        elif status in (
+            QMediaPlayer.MediaStatus.NoMedia,
+            QMediaPlayer.MediaStatus.LoadingMedia,
+            QMediaPlayer.MediaStatus.InvalidMedia,
+        ):
+            self._ready = False
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.end_of_media.emit()
 

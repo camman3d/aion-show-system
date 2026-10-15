@@ -54,7 +54,11 @@ class ShowEngine(QObject):
         self.sender = DmxSender(self._render_frame, fps=fps)
         self._show: Show | None = None
         self._finishing = False
+        self._play_pending = False  # play() asked, media still loading
+        self._awaiting_audio = False  # player says playing, position not moving yet
+        self._audio_start_ms: int | None = None
 
+        self.player.ready.connect(self._on_media_ready)
         self.player.position_changed.connect(self._on_media_position)
         self.player.state_changed.connect(self._on_media_state)
         self.player.end_of_media.connect(self._on_end_of_media)
@@ -110,14 +114,33 @@ class ShowEngine(QObject):
     def play(self) -> None:
         """Start the DMX loop first, so lighting is live before sound starts."""
         self._finishing = False
-        self.sender.start()
         if self._show and self._show.media:
-            self.player.play()  # the clock starts when the player reports playing
+            if not self.player.is_ready:
+                # Starting before the decoder is up makes the audio lag the
+                # clock and the show jump back to catch it. Wait instead.
+                self._play_pending = True
+                log.info("Waiting for media to load before starting")
+                return
+            self._start_media()
         else:
+            self.sender.start()
             self.clock.start()
         self._completion_timer.start()
 
+    def _start_media(self) -> None:
+        self._play_pending = False
+        self.sender.start()
+        self._awaiting_audio = True
+        self._audio_start_ms = None
+        self.player.play()  # the clock starts once the audio is really moving
+        self._completion_timer.start()
+
+    def _on_media_ready(self) -> None:
+        if self._play_pending:
+            self._start_media()
+
     def pause(self) -> None:
+        self._play_pending = False
         if self._show and self._show.media:
             self.player.pause()
         self.clock.pause()
@@ -125,6 +148,9 @@ class ShowEngine(QObject):
 
     def stop(self) -> None:
         """Stop everything and black out the rig before dropping the output."""
+        self._play_pending = False
+        self._awaiting_audio = False
+        self._audio_start_ms = None
         self._completion_timer.stop()
         self.player.stop()
         self.clock.stop()
@@ -171,12 +197,26 @@ class ShowEngine(QObject):
         return show.render(self.clock.position_ms())
 
     def _on_media_position(self, position_ms: int) -> None:
+        if self._awaiting_audio:
+            # The player reports "playing" before the audio device has started,
+            # and the position sits still until it has. Start the clock on the
+            # first report that has actually moved.
+            start = self._audio_start_ms
+            if start is None:
+                self._audio_start_ms = position_ms
+                return
+            if position_ms == start:
+                return
+            self._awaiting_audio = False
+            self._audio_start_ms = None
+            self.clock.start(float(position_ms))
+            return
         error = self.clock.sync(float(position_ms))
         self.sync_error_changed.emit(error)
 
     def _on_media_state(self, state: PlaybackState) -> None:
         if state is PlaybackState.PLAYING:
-            if not self.clock.running:
+            if not self.clock.running and not self._awaiting_audio:
                 self.clock.start(self.player.position)
         elif state is PlaybackState.PAUSED:
             self.clock.pause()
