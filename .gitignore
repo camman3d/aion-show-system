@@ -34,3 +34,4 @@ media/
 # Runtime output
 data/
 logs/
+config.json
